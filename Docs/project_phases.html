@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FinVault — Project Phases</title>
+<style>
+  :root {
+    --blue: #2f5fdc;
+    --blue-dark: #1e3fae;
+    --text: #1a1d29;
+    --muted: #5a6072;
+    --border: #e4e7ee;
+    --stripe: #f4f6fb;
+    --bg: #f9fafc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    padding: 48px 24px 96px;
+  }
+  .container {
+    max-width: 980px;
+    margin: 0 auto;
+  }
+  .doc-title {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text);
+    margin: 0 0 4px;
+  }
+  .doc-subtitle {
+    color: var(--muted);
+    font-size: 15px;
+    margin: 0 0 40px;
+  }
+  .phase {
+    margin-bottom: 44px;
+  }
+  .phase-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--blue);
+    margin: 0 0 14px;
+  }
+  .phase-hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 0 0 18px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(20, 30, 60, 0.06);
+  }
+  thead th {
+    background: var(--blue);
+    color: #fff;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 14px 20px;
+  }
+  thead th:first-child {
+    width: 60px;
+  }
+  thead th:nth-child(2) {
+    width: 42%;
+  }
+  tbody td {
+    padding: 16px 20px;
+    font-size: 14.5px;
+    line-height: 1.55;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:last-child td {
+    border-bottom: none;
+  }
+  tbody tr:nth-child(even) {
+    background: var(--stripe);
+  }
+  .num {
+    color: var(--muted);
+    font-weight: 600;
+  }
+  code {
+    background: #eef1f8;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 13px;
+    color: var(--blue-dark);
+  }
+  .legend {
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <p class="doc-title">FinVault — Full Project Plan</p>
+  <p class="doc-subtitle">Next.js + MongoDB · Personal accounts, income &amp; expenses, and group expense management · Phase-by-phase build</p>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 0 — Foundation (Next.js + MongoDB + Auth)</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">0.1</td>
+          <td>Next.js project setup, MongoDB connection (Mongoose, local instance)</td>
+          <td>App boots, <code>/api/health</code> confirms DB connection</td>
+        </tr>
+        <tr>
+          <td class="num">0.2</td>
+          <td><code>User</code> model + signup / login (JWT or session-based)</td>
+          <td>Can register, log in, protected route rejects requests with no token</td>
+        </tr>
+        <tr>
+          <td class="num">0.3</td>
+          <td>Base layout, protected route wrapper, navigation shell</td>
+          <td>Logged-out user is redirected to login from any protected page</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 1 — Individual Accounts</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">1.1</td>
+          <td><code>Account</code> model — name, type (bank / cash / wallet), currency, balance, owner</td>
+          <td>Create account via API, appears in DB with correct owner</td>
+        </tr>
+        <tr>
+          <td class="num">1.2</td>
+          <td><code>Transaction</code> ledger model — the single source of truth for balances</td>
+          <td>Every balance change writes exactly one <code>Transaction</code> row</td>
+        </tr>
+        <tr>
+          <td class="num">1.3</td>
+          <td>Account CRUD API + UI (list, create, edit, delete)</td>
+          <td>Create / edit / delete reflected instantly in UI and DB</td>
+        </tr>
+        <tr>
+          <td class="num">1.4</td>
+          <td>Account detail page — current balance + transaction history</td>
+          <td>Displayed balance always matches sum of that account's transactions</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 2 — Individual Income &amp; Expenses</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">2.1</td>
+          <td><code>Expense</code> model, tied to an <code>Account</code>, writes a debit <code>Transaction</code></td>
+          <td>Adding an expense reduces account balance by the exact amount</td>
+        </tr>
+        <tr>
+          <td class="num">2.2</td>
+          <td><code>Income</code> model, tied to an <code>Account</code>, writes a credit <code>Transaction</code></td>
+          <td>Adding income increases account balance by the exact amount</td>
+        </tr>
+        <tr>
+          <td class="num">2.3</td>
+          <td>Categories — predefined + custom, applied to expenses / income</td>
+          <td>Entries can be tagged and filtered by category</td>
+        </tr>
+        <tr>
+          <td class="num">2.4</td>
+          <td>Personal dashboard — balance per account, spend-by-category breakdown</td>
+          <td>Dashboard totals match the sum of underlying accounts</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 3 — Groups (Structure Only)</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">3.1</td>
+          <td><code>Group</code> model + create / rename / delete</td>
+          <td>Group visible to creator and added members only</td>
+        </tr>
+        <tr>
+          <td class="num">3.2</td>
+          <td><code>GroupMember</code> model — registered users + guests</td>
+          <td>Both member types listed correctly in the group member list</td>
+        </tr>
+        <tr>
+          <td class="num">3.3</td>
+          <td>Add / remove member, roles (admin / member)</td>
+          <td>Non-admin is blocked from remove / rename actions</td>
+        </tr>
+        <tr>
+          <td class="num">3.4</td>
+          <td>Guest invite email</td>
+          <td>Email sent on guest add, invite link works</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 4 — Linking Accounts to Groups</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">4.1</td>
+          <td><code>GroupMemberAccount</code> — link one or more personal accounts to a group</td>
+          <td>User can attach an account, sees it listed in group settings</td>
+        </tr>
+        <tr>
+          <td class="num">4.2</td>
+          <td>Set a default / primary account per group</td>
+          <td>New group expense defaults to this account as the payer source</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 5 — Group Expenses (Money Moves for Real)</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">5.1</td>
+          <td><code>GroupExpense</code> model — Equal split</td>
+          <td>Payer's account debited full amount; each member's share computed correctly</td>
+        </tr>
+        <tr>
+          <td class="num">5.2</td>
+          <td><code>GroupExpense</code> model — Manual split</td>
+          <td>Custom split amounts sum exactly to the total expense</td>
+        </tr>
+        <tr>
+          <td class="num">5.3</td>
+          <td>Real account debit on expense creation, tagged <code>group_expense</code></td>
+          <td>Single <code>Transaction</code> row created, <code>sourceId</code> points back to the expense</td>
+        </tr>
+        <tr>
+          <td class="num">5.4</td>
+          <td>Edit / delete an expense reverses the linked <code>Transaction</code></td>
+          <td>Account balance returns to pre-expense state after delete</td>
+        </tr>
+        <tr>
+          <td class="num">5.5</td>
+          <td>Live group balance calculator (<code>GET /:id/balances</code>)</td>
+          <td>"Who owes whom" always matches manual calculation from expense records</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 6 — Settlements / Transfers</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">6.1</td>
+          <td><code>GroupTransfer</code> model — Pending → Confirm / Reject (two registered users)</td>
+          <td>Transfer stays pending until receiver confirms; balances unaffected until then</td>
+        </tr>
+        <tr>
+          <td class="num">6.2</td>
+          <td>Auto-confirm when a guest is on either side of the transfer</td>
+          <td>Transfer involving a guest settles immediately, no confirm step shown</td>
+        </tr>
+        <tr>
+          <td class="num">6.3</td>
+          <td>Confirmed transfer debits sender's account, credits receiver's account</td>
+          <td>Both accounts' balances update by the exact transfer amount</td>
+        </tr>
+        <tr>
+          <td class="num">6.4</td>
+          <td>Settlement suggestions (minimize number of transfers)</td>
+          <td>Suggested transfers fully clear all outstanding group balances</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 7 — Guest Claim Flow</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">7.1</td>
+          <td>Guest claims profile via matching email on signup</td>
+          <td><code>GroupMember._id</code> preserved — no duplicate history created</td>
+        </tr>
+        <tr>
+          <td class="num">7.2</td>
+          <td>Global "pending claims" prompt on login</td>
+          <td>New user sees any guest profiles matching their email and can claim them</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="phase">
+    <h2 class="phase-title">Phase 8 — Polish &amp; Reporting</h2>
+    <hr class="phase-hr">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Feature</th><th>Test / Acceptance</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">8.1</td>
+          <td>Combined dashboard — personal + group net worth</td>
+          <td>Net worth figure matches sum of all account balances</td>
+        </tr>
+        <tr>
+          <td class="num">8.2</td>
+          <td>Currency conversion (e.g. USD/PKR), applied consistently</td>
+          <td>All displayed totals convert correctly, no double-conversion</td>
+        </tr>
+        <tr>
+          <td class="num">8.3</td>
+          <td>Notifications — email + in-app for key events</td>
+          <td>Expense added, settlement requested/confirmed all trigger notifications</td>
+        </tr>
+        <tr>
+          <td class="num">8.4</td>
+          <td>Edge-case hardening + test pass across all phases</td>
+          <td>No orphaned transactions, no balance drift after stress-testing edits/deletes</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
