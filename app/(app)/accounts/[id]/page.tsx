@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { AccountHeader } from "@/components/accounts/AccountHeader";
 import { TransactionTable } from "@/components/accounts/TransactionTable";
 import { findOwnedAccount } from "@/lib/account-access";
+import { getGroupReceivablesForUser } from "@/lib/group-receivables";
 import { sumBalance } from "@/lib/ledger";
 import { getSessionUserId } from "@/lib/session";
 import { toTransactionPublicWithLinks } from "@/lib/transaction-links";
@@ -44,12 +45,13 @@ export default async function AccountDetailPage({
     notFound();
   }
 
-  const [ledgerBalance, total, transactions] = await Promise.all([
+  const [ledgerBalance, total, transactions, receivables] = await Promise.all([
     sumBalance(account._id),
     Transaction.countDocuments({ account: account._id }),
     Transaction.find({ account: account._id })
       .sort({ occurredAt: -1 })
       .limit(DEFAULT_PAGE_SIZE),
+    getGroupReceivablesForUser(userId),
   ]);
 
   const showMismatchWarning =
@@ -79,6 +81,7 @@ export default async function AccountDetailPage({
         currency={account.currency}
         balance={ledgerBalance}
         showMismatchWarning={showMismatchWarning}
+        owedToYou={receivables.totalOwedToYou}
       />
 
       <div className="mt-4 flex flex-wrap gap-3">

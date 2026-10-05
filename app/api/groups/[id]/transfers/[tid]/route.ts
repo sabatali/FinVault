@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
+import { assertGroupMember } from "@/lib/group-access";
 import {
-  assertGroupMember,
-  GroupAccessError,
-  groupAccessErrorResponse,
-} from "@/lib/group-access";
+  TransferStateError,
+  transferErrorResponse,
+} from "@/lib/group-transfer-errors";
 import { GroupTransfer } from "@/models/GroupTransfer";
 
 type RouteContext = { params: Promise<{ id: string; tid: string }> };
@@ -38,16 +38,6 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
     }
 
-    if (transfer.status !== "pending") {
-      return NextResponse.json(
-        {
-          error: "Only pending settlements can be cancelled.",
-          code: "ALREADY_CLOSED",
-        },
-        { status: 409 },
-      );
-    }
-
     if (transfer.fromMember.toString() !== membership._id.toString()) {
       return NextResponse.json(
         {
@@ -58,13 +48,26 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    await transfer.deleteOne();
+    const deleted = await GroupTransfer.findOneAndDelete({
+      _id: tid,
+      group: groupId,
+      status: "pending",
+      fromMember: membership._id,
+    });
+
+    if (!deleted) {
+      throw new TransferStateError(
+        409,
+        "ALREADY_CLOSED",
+        "Only pending settlements can be cancelled.",
+      );
+    }
+
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
+    const mapped = transferErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     console.error("Cancel group transfer error:", error);

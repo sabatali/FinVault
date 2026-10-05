@@ -7,11 +7,17 @@ interface SpendByCategoryProps {
   rows: SpendByCategoryRow[];
   expenseTotal: number;
   currency?: string;
+  groupSpendByGroup?: Array<{
+    groupId: string;
+    groupName: string;
+    amount: number;
+  }>;
 }
 
 export function SpendByCategory({
   rows,
   expenseTotal,
+  groupSpendByGroup = [],
 }: SpendByCategoryProps) {
   const { format } = useMoney();
 
@@ -43,7 +49,21 @@ export function SpendByCategory({
           return (
             <li key={`${row.categoryId ?? "null"}-${row.name}`}>
               <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="font-medium text-[#1a1d29]">{row.name}</span>
+                <span
+                  className="font-medium text-[#1a1d29]"
+                  title={
+                    row.name === "Group expenses" && groupSpendByGroup.length > 0
+                      ? groupSpendByGroup
+                          .map(
+                            (group) =>
+                              `${group.groupName}: ${format(group.amount)}`,
+                          )
+                          .join(" · ")
+                      : undefined
+                  }
+                >
+                  {row.name}
+                </span>
                 <span className="text-[#5a6072]">
                   {format(row.amount)} · {row.percent.toFixed(1)}%
                 </span>

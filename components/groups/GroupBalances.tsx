@@ -1,15 +1,25 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMoney } from "@/components/currency/CurrencyProvider";
-import { owedAmountLine, owesAmountLine } from "@/lib/owes-labels";
+import {
+  owedAmountLine,
+  owesAmountLine,
+  PENDING_ON_THE_WAY,
+} from "@/lib/owes-labels";
 import { toPaisa } from "@/lib/splits";
 import type { GroupBalanceMember, GroupBalancesResult } from "@/lib/group-balances";
 
 interface GroupBalancesProps {
   balances: GroupBalancesResult;
+  groupId?: string;
 }
 
-export function GroupBalances({ balances }: GroupBalancesProps) {
+export function GroupBalances({
+  balances,
+  groupId,
+}: GroupBalancesProps) {
   const { format } = useMoney();
 
   function balanceSentence(member: GroupBalanceMember): string {
@@ -24,7 +34,10 @@ export function GroupBalances({ balances }: GroupBalancesProps) {
   }
 
   const allSettled = balances.members.every(
-    (member) => toPaisa(member.net) === 0,
+    (member) =>
+      toPaisa(member.net) === 0 &&
+      toPaisa(member.pendingIn) === 0 &&
+      toPaisa(member.pendingOut) === 0,
   );
 
   if (balances.members.length === 0) {
@@ -71,6 +84,19 @@ export function GroupBalances({ balances }: GroupBalancesProps) {
                 {format(member.shareTotal)}
                 {member.memberType === "guest" ? " · guest" : ""}
               </p>
+              {toPaisa(member.pendingIn) > 0 || toPaisa(member.pendingOut) > 0 ? (
+                <p className="mt-0.5 text-xs text-[#5a6072]">
+                  {format(member.pendingIn + member.pendingOut)} {PENDING_ON_THE_WAY}
+                </p>
+              ) : null}
+              {groupId ? (
+                <Link
+                  href={`/groups/${groupId}/statement?member=${member.memberId}`}
+                  className="mt-1 inline-block text-xs font-semibold text-[#2f5fdc] hover:underline"
+                >
+                  Statement
+                </Link>
+              ) : null}
             </div>
             <p
               className={`shrink-0 text-sm font-bold ${

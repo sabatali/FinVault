@@ -18,12 +18,26 @@ export interface GroupBalanceMember {
   net: number;
   paidTotal: number;
   shareTotal: number;
+  pendingIn: number;
+  pendingOut: number;
+  netAfterPending: number;
+}
+
+export interface PendingBalanceTransfer {
+  transferId: string;
+  fromMemberId: string;
+  toMemberId: string;
+  amount: number;
+  fromDisplayName: string;
+  toDisplayName: string;
+  createdAt: string;
 }
 
 export interface GroupBalancesResult {
   currency: string;
   members: GroupBalanceMember[];
   sumOfNets: number;
+  pendingTransfers: PendingBalanceTransfer[];
 }
 
 export interface BalanceExpenseInput {
@@ -53,16 +67,21 @@ export function aggregateGroupBalances(input: {
   members: BalanceMemberInput[];
   expenses: BalanceExpenseInput[];
   transfers?: BalanceTransferInput[];
+  pendingTransfers?: BalanceTransferInput[];
   currency?: string;
 }): GroupBalancesResult {
   const paid = new Map<string, number>();
   const share = new Map<string, number>();
   const transferAdj = new Map<string, number>();
+  const pendingIn = new Map<string, number>();
+  const pendingOut = new Map<string, number>();
 
   for (const member of input.members) {
     paid.set(member.memberId, 0);
     share.set(member.memberId, 0);
     transferAdj.set(member.memberId, 0);
+    pendingIn.set(member.memberId, 0);
+    pendingOut.set(member.memberId, 0);
   }
 
   for (const expense of input.expenses) {
@@ -94,11 +113,28 @@ export function aggregateGroupBalances(input: {
     );
   }
 
+  for (const transfer of input.pendingTransfers ?? []) {
+    const amountPaisa = toPaisa(transfer.amount);
+    pendingOut.set(
+      transfer.fromMemberId,
+      (pendingOut.get(transfer.fromMemberId) ?? 0) + amountPaisa,
+    );
+    pendingIn.set(
+      transfer.toMemberId,
+      (pendingIn.get(transfer.toMemberId) ?? 0) + amountPaisa,
+    );
+  }
+
   const members: GroupBalanceMember[] = input.members.map((member) => {
     const paidTotal = paid.get(member.memberId) ?? 0;
     const shareTotal = share.get(member.memberId) ?? 0;
     const adj = transferAdj.get(member.memberId) ?? 0;
     const net = roundAmount(paidTotal - shareTotal + adj);
+    const pendingInAmount = fromPaisa(pendingIn.get(member.memberId) ?? 0);
+    const pendingOutAmount = fromPaisa(pendingOut.get(member.memberId) ?? 0);
+    const netAfterPending = fromPaisa(
+      toPaisa(net) + toPaisa(pendingOutAmount) - toPaisa(pendingInAmount),
+    );
     return {
       memberId: member.memberId,
       displayName: member.displayName,
@@ -106,6 +142,9 @@ export function aggregateGroupBalances(input: {
       net,
       paidTotal,
       shareTotal,
+      pendingIn: pendingInAmount,
+      pendingOut: pendingOutAmount,
+      netAfterPending,
     };
   });
 
@@ -125,6 +164,7 @@ export function aggregateGroupBalances(input: {
     currency: input.currency ?? "PKR",
     members,
     sumOfNets,
+    pendingTransfers: [],
   };
 }
 
@@ -140,11 +180,20 @@ export async function computeGroupBalances(
     ),
     GroupTransfer.find({
       group: groupId,
-      status: { $in: CONFIRMED_TRANSFER_STATUSES },
-    }).select("fromMember toMember amount"),
+      status: { $in: [...CONFIRMED_TRANSFER_STATUSES, "pending"] },
+    }).select("fromMember toMember amount status createdAt"),
   ]);
 
-  return aggregateGroupBalances({
+  const nameById = new Map(
+    members.map((member) => [member._id.toString(), member.displayName]),
+  );
+
+  const confirmed = transfers.filter((transfer) =>
+    CONFIRMED_TRANSFER_STATUSES.includes(transfer.status),
+  );
+  const pending = transfers.filter((transfer) => transfer.status === "pending");
+
+  const result = aggregateGroupBalances({
     members: members.map((member) => ({
       memberId: member._id.toString(),
       displayName: member.displayName,
@@ -158,11 +207,32 @@ export async function computeGroupBalances(
         shareAmount: participant.shareAmount,
       })),
     })),
-    transfers: transfers.map((transfer) => ({
+    transfers: confirmed.map((transfer) => ({
+      fromMemberId: transfer.fromMember.toString(),
+      toMemberId: transfer.toMember.toString(),
+      amount: transfer.amount,
+    })),
+    pendingTransfers: pending.map((transfer) => ({
       fromMemberId: transfer.fromMember.toString(),
       toMemberId: transfer.toMember.toString(),
       amount: transfer.amount,
     })),
     currency: "PKR",
   });
+
+  result.pendingTransfers = pending.map((transfer) => {
+    const fromMemberId = transfer.fromMember.toString();
+    const toMemberId = transfer.toMember.toString();
+    return {
+      transferId: transfer._id.toString(),
+      fromMemberId,
+      toMemberId,
+      amount: transfer.amount,
+      fromDisplayName: nameById.get(fromMemberId) ?? "Member",
+      toDisplayName: nameById.get(toMemberId) ?? "Member",
+      createdAt: transfer.createdAt.toISOString(),
+    };
+  });
+
+  return result;
 }

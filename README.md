@@ -9,14 +9,34 @@ Personal and group finance management — one ledger for your real accounts, inc
 
 ### MongoDB replica set (required for the ledger)
 
-FinVault uses MongoDB multi-document transactions for the money ledger. A standalone MongoDB instance must be initialized as a single-node replica set:
+FinVault uses MongoDB multi-document transactions for the money ledger. A standalone `mongod` is **not** enough — initialize a single-node replica set.
 
-```javascript
-// In mongosh, after starting MongoDB:
-rs.initiate()
-```
+**Windows**
 
-If transactions are unavailable, account creation and other money operations will fail until replica set mode is enabled.
+1. Edit `mongod.cfg` (usually `C:\Program Files\MongoDB\Server\<ver>\bin\mongod.cfg`) and add:
+
+   ```yaml
+   replication:
+     replSetName: rs0
+   ```
+
+2. Restart the MongoDB Windows service.
+
+3. In `mongosh`:
+
+   ```javascript
+   rs.initiate()
+   ```
+
+4. Point `.env.local` at the replica set:
+
+   ```
+   MONGODB_URI=mongodb://127.0.0.1:27017/finvault?replicaSet=rs0&retryWrites=false
+   ```
+
+5. Run `npm run audit:ledger` to check existing data for drift.
+
+If transactions are unavailable, ledger writes return `503 TRANSACTIONS_UNAVAILABLE` until replica set mode is enabled. Do not set `ALLOW_NON_TRANSACTIONAL_WRITES` except in local debugging.
 
 ## Local setup
 

@@ -35,7 +35,7 @@ export interface CombinedDashboardData extends PersonalDashboardData {
   groupSummary: GroupSummary;
 }
 
-async function getGroupSummary(userId: string): Promise<GroupSummary> {
+export async function getGroupSummary(userId: string): Promise<GroupSummary> {
   await connectDB();
 
   const memberships = await GroupMember.find({

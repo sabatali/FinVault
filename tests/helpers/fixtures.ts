@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 import { postLedgerEntry } from "@/lib/ledger";
-import { withOptionalTransaction } from "@/lib/with-transaction";
+import { withTransaction } from "@/lib/with-transaction";
 import { Account, type IAccount } from "@/models/Account";
 import { Expense } from "@/models/Expense";
 import { Group, type IGroup } from "@/models/Group";
@@ -14,6 +14,7 @@ import {
   type IGroupMember,
 } from "@/models/GroupMember";
 import { Income } from "@/models/Income";
+import { GroupMemberAccount } from "@/models/GroupMemberAccount";
 import { Notification } from "@/models/Notification";
 import { User, type IUser } from "@/models/User";
 import { equalShares } from "@/lib/splits";
@@ -40,8 +41,8 @@ export async function createAccountWithOpening(input: {
   const opening = input.openingBalance ?? 10_000;
   const accountId = new mongoose.Types.ObjectId();
 
-  await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+  await withTransaction(async (session) => {
+    const opts = { session };
     await Account.create(
       [
         {
@@ -87,8 +88,8 @@ export async function createPersonalExpense(input: {
   const expenseId = new mongoose.Types.ObjectId();
   const amount = input.amount;
 
-  await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+  await withTransaction(async (session) => {
+    const opts = { session };
     const transaction = await postLedgerEntry({
       accountId: input.account._id,
       userId: input.user._id,
@@ -130,8 +131,8 @@ export async function createPersonalIncome(input: {
   const incomeId = new mongoose.Types.ObjectId();
   const amount = input.amount;
 
-  await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+  await withTransaction(async (session) => {
+    const opts = { session };
     const transaction = await postLedgerEntry({
       accountId: input.account._id,
       userId: input.user._id,
@@ -228,8 +229,8 @@ export async function createEqualGroupExpense(input: {
   const shares = equalShares(input.amount, input.participantIds);
   const expenseId = new mongoose.Types.ObjectId();
 
-  const expense = await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+  const expense = await withTransaction(async (session) => {
+    const opts = { session };
     const [created] = await GroupExpense.create(
       [
         {
@@ -271,6 +272,20 @@ export async function createEqualGroupExpense(input: {
   });
 
   return expense;
+}
+
+export async function linkMemberAccount(input: {
+  group: IGroup;
+  member: IGroupMember;
+  account: IAccount;
+  isPrimary?: boolean;
+}) {
+  return GroupMemberAccount.create({
+    group: input.group._id,
+    groupMember: input.member._id,
+    account: input.account._id,
+    isPrimary: input.isPrimary ?? true,
+  });
 }
 
 export async function createNotificationFor(input: {

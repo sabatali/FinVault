@@ -120,6 +120,7 @@ export default async function DashboardPage({
               rows={dashboard.spendByCategory}
               expenseTotal={dashboard.expenseTotal}
               currency={dashboard.currency}
+              groupSpendByGroup={dashboard.groupSpendByGroup}
             />
           </section>
         </>

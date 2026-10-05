@@ -5,13 +5,8 @@ import { Suspense } from "react";
 
 import { ClaimSignupBanners } from "@/components/auth/ClaimSignupBanners";
 import { GroupDetailHeader } from "@/components/groups/GroupDetailHeader";
-import {
-  GroupBalances,
-  GroupBalancesSkeleton,
-} from "@/components/groups/GroupBalances";
-import {
-  SettlementSuggestions,
-} from "@/components/groups/SettlementSuggestions";
+import { GroupBalancesSkeleton } from "@/components/groups/GroupBalances";
+import { GroupSettlementPanel } from "@/components/groups/GroupSettlementPanel";
 import {
   GroupExpenseList,
   GroupExpenseListSkeleton,
@@ -31,13 +26,15 @@ import {
 } from "@/components/groups/TransferList";
 import { connectDB } from "@/lib/db";
 import { computeGroupBalances } from "@/lib/group-balances";
+import { computePairwiseDebts } from "@/lib/group-pairwise";
+import { loadGroupSettlementData } from "@/lib/load-group-settlement";
+import { suggestionsFromBalances } from "@/lib/settlement-view";
 import {
   assertGroupMember,
   GroupAccessError,
   listMembersForGroup,
 } from "@/lib/group-access";
 import { buildGroupTransferPublic } from "@/lib/group-transfer-public";
-import { suggestTransfers } from "@/lib/settle";
 import { getSessionUserId } from "@/lib/session";
 import { Account } from "@/models/Account";
 import { toGroupPublic } from "@/models/Group";
@@ -225,27 +222,13 @@ async function GroupBalancesSection({
   groupId: string;
   membershipId: string;
 }) {
-  const [balances, members] = await Promise.all([
+  const [balances, members, settlement] = await Promise.all([
     computeGroupBalances(groupId),
     listMembersForGroup(groupId),
+    loadGroupSettlementData(groupId),
   ]);
-
-  const suggestions = suggestTransfers(
-    balances.members.map((member) => ({
-      memberId: member.memberId,
-      net: member.net,
-    })),
-  );
-  const nameById = new Map(
-    balances.members.map((member) => [member.memberId, member.displayName]),
-  );
-  const initialSuggestions = suggestions.map((row) => ({
-    fromMemberId: row.fromMemberId,
-    toMemberId: row.toMemberId,
-    amount: row.amount,
-    fromDisplayName: nameById.get(row.fromMemberId) ?? "Member",
-    toDisplayName: nameById.get(row.toMemberId) ?? "Member",
-  }));
+  const suggestions = suggestionsFromBalances(balances.members);
+  const pairwise = computePairwiseDebts(settlement);
 
   return (
     <section aria-labelledby="balances-heading">
@@ -262,27 +245,30 @@ async function GroupBalancesSection({
               Net position after shared expenses and confirmed settlements.
             </p>
           </div>
-          <Link
-            href={`/groups/${groupId}/history`}
-            className="rounded-lg border border-[#e4e7ee] bg-white px-4 py-2.5 text-sm font-semibold text-[#1a1d29] hover:bg-[#f4f6fb]"
-          >
-            View Full History
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/groups/${groupId}/statement?member=${membershipId}`}
+              className="rounded-lg border border-[#e4e7ee] bg-white px-4 py-2.5 text-sm font-semibold text-[#1a1d29] hover:bg-[#f4f6fb]"
+            >
+              View statement
+            </Link>
+            <Link
+              href={`/groups/${groupId}/history`}
+              className="rounded-lg border border-[#e4e7ee] bg-white px-4 py-2.5 text-sm font-semibold text-[#1a1d29] hover:bg-[#f4f6fb]"
+            >
+              View Full History
+            </Link>
+          </div>
         </div>
       </div>
-      <GroupBalances balances={balances} />
-      <SettlementSuggestions
-        key={initialSuggestions
-          .map(
-            (row) =>
-              `${row.fromMemberId}:${row.toMemberId}:${row.amount}`,
-          )
-          .join("|")}
+      <GroupSettlementPanel
         groupId={groupId}
         currentMemberId={membershipId}
+        balances={balances}
         members={members.map(toGroupMemberPublic)}
-        currency={balances.currency}
-        initialSuggestions={initialSuggestions}
+        suggestions={suggestions}
+        pairwise={pairwise}
+        pending={balances.pendingTransfers}
       />
     </section>
   );

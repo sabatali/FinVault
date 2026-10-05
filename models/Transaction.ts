@@ -101,11 +101,20 @@ export interface TransactionPublic {
   occurredAt: string;
   /** Deep link to the originating document when available. */
   sourceHref?: string | null;
+  groupExpense?: {
+    yourShare: number;
+    othersShare: number;
+    groupId: string;
+    groupName: string;
+  };
 }
 
 export function toTransactionPublic(
   transaction: ITransaction,
-  extras?: { sourceHref?: string | null },
+  extras?: {
+    sourceHref?: string | null;
+    groupExpense?: TransactionPublic["groupExpense"];
+  },
 ): TransactionPublic {
   return {
     id: transaction._id.toString(),
@@ -118,6 +127,9 @@ export function toTransactionPublic(
     occurredAt: transaction.occurredAt.toISOString(),
     ...(extras?.sourceHref !== undefined
       ? { sourceHref: extras.sourceHref }
+      : {}),
+    ...(extras?.groupExpense !== undefined
+      ? { groupExpense: extras.groupExpense }
       : {}),
   };
 }

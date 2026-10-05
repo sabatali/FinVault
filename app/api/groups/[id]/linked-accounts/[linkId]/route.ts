@@ -5,10 +5,11 @@ import { requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import {
   assertGroupMember,
-  GroupAccessError,
-  groupAccessErrorResponse,
 } from "@/lib/group-access";
+import { transferErrorResponse } from "@/lib/group-transfer-errors";
+import { withTransaction } from "@/lib/with-transaction";
 import { GroupMemberAccount } from "@/models/GroupMemberAccount";
+import { GroupTransfer } from "@/models/GroupTransfer";
 
 type RouteContext = { params: Promise<{ id: string; linkId: string }> };
 
@@ -38,27 +39,48 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: "Link not found" }, { status: 404 });
     }
 
-    const wasPrimary = link.isPrimary;
-    await link.deleteOne();
+    const pending = await GroupTransfer.countDocuments({
+      group: groupId,
+      status: "pending",
+      $or: [{ fromAccount: link.account }, { toAccount: link.account }],
+    });
 
-    if (wasPrimary) {
-      const nextPrimary = await GroupMemberAccount.findOne({
-        groupMember: membership._id,
-        group: groupId,
-      }).sort({ createdAt: 1 });
-
-      if (nextPrimary) {
-        nextPrimary.isPrimary = true;
-        await nextPrimary.save();
-      }
+    if (pending > 0) {
+      return NextResponse.json(
+        {
+          error:
+            "This account is used by a pending settlement. Cancel or resolve it first.",
+          code: "ACCOUNT_HAS_PENDING_SETTLEMENTS",
+          pendingCount: pending,
+        },
+        { status: 409 },
+      );
     }
+
+    await withTransaction(async (session) => {
+      const wasPrimary = link.isPrimary;
+      await link.deleteOne({ session });
+
+      if (wasPrimary) {
+        const nextPrimary = await GroupMemberAccount.findOne({
+          groupMember: membership._id,
+          group: groupId,
+        })
+          .sort({ createdAt: 1 })
+          .session(session);
+
+        if (nextPrimary) {
+          nextPrimary.isPrimary = true;
+          await nextPrimary.save({ session });
+        }
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
+    const mapped = transferErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     console.error("Unlink group account error:", error);

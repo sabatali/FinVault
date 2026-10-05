@@ -5,22 +5,19 @@ import { requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import {
   assertGroupMember,
-  GroupAccessError,
-  groupAccessErrorResponse,
 } from "@/lib/group-access";
 import { applyGroupTransferLedger } from "@/lib/group-transfer-ledger";
+import {
+  TransferStateError,
+  transferErrorResponse,
+} from "@/lib/group-transfer-errors";
 import { buildGroupTransferPublic } from "@/lib/group-transfer-public";
 import { notifySettlementConfirmed } from "@/lib/notify";
-import {
-  AccountNotFoundError,
-  AccountOwnershipError,
-  InvalidLedgerAmountError,
-} from "@/lib/ledger-errors";
 import {
   confirmGroupTransferSchema,
   formatZodErrors,
 } from "@/lib/validators/group-transfer";
-import { withOptionalTransaction } from "@/lib/with-transaction";
+import { withTransaction } from "@/lib/with-transaction";
 import { Account } from "@/models/Account";
 import { GroupMember } from "@/models/GroupMember";
 import { GroupMemberAccount } from "@/models/GroupMemberAccount";
@@ -65,16 +62,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const { group, membership } = await assertGroupMember(auth.userId, groupId);
     await connectDB();
 
-    const transfer = await GroupTransfer.findOne({
+    const existing = await GroupTransfer.findOne({
       _id: tid,
       group: groupId,
     });
 
-    if (!transfer) {
+    if (!existing) {
       return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
     }
 
-    if (transfer.status === "rejected") {
+    if (existing.status === "rejected") {
       return NextResponse.json(
         {
           error: "This settlement was rejected and cannot be confirmed.",
@@ -84,20 +81,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    if (transfer.status !== "pending") {
-      return NextResponse.json(
-        {
-          error:
-            transfer.status === "auto_confirmed"
-              ? "Guest settlements are auto-confirmed and cannot be confirmed again."
-              : "This settlement is not pending.",
-          code: "NOT_PENDING",
-        },
-        { status: 400 },
-      );
-    }
-
-    if (transfer.toMember.toString() !== membership._id.toString()) {
+    if (existing.toMember.toString() !== membership._id.toString()) {
       return NextResponse.json(
         {
           error: "Only the receiver can confirm this settlement.",
@@ -114,88 +98,162 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    let toAccountId: mongoose.Types.ObjectId | null = null;
-
-    if (parsed.data.toAccountId) {
-      const link = await GroupMemberAccount.findOne({
-        group: groupId,
-        groupMember: membership._id,
-        account: parsed.data.toAccountId,
-      });
-      if (!link) {
-        return NextResponse.json(
-          {
-            error: "To account is not linked to this group.",
-            code: "ACCOUNT_NOT_LINKED",
-            fields: { toAccountId: "Link this account first" },
-          },
-          { status: 400 },
-        );
-      }
-      const account = await Account.findOne({
-        _id: parsed.data.toAccountId,
-        owner: auth.userId,
-      });
-      if (!account) {
-        return NextResponse.json(
-          { error: "To account not found.", code: "ACCOUNT_NOT_FOUND" },
-          { status: 404 },
-        );
-      }
-      toAccountId = account._id;
-    } else {
-      const primary =
-        (await GroupMemberAccount.findOne({
-          group: groupId,
-          groupMember: membership._id,
-          isPrimary: true,
-        })) ??
-        (await GroupMemberAccount.findOne({
-          group: groupId,
-          groupMember: membership._id,
-        }).sort({ createdAt: 1 }));
-
-      if (!primary) {
-        return NextResponse.json(
-          {
-            error: "Link an account before confirming this settlement.",
-            code: "NO_PAYER_ACCOUNT",
-            fields: { toAccountId: "Link a personal account to this group" },
-          },
-          { status: 400 },
-        );
-      }
-      toAccountId = primary.account;
-    }
-
-    const fromMember = await GroupMember.findById(transfer.fromMember);
-    if (!fromMember) {
-      return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
-    }
-
-    if (
-      fromMember.memberType === "registered" &&
-      !transfer.fromAccount
-    ) {
+    if (existing.status !== "pending") {
       return NextResponse.json(
         {
-          error: "Sender account is missing on this settlement.",
-          code: "NO_SENDER_ACCOUNT",
+          error:
+            existing.status === "auto_confirmed"
+              ? "Guest settlements are auto-confirmed and cannot be confirmed again."
+              : "This settlement is not pending.",
+          code: "NOT_PENDING",
         },
-        { status: 400 },
+        { status: existing.status === "auto_confirmed" ? 400 : 409 },
       );
     }
 
-    await withOptionalTransaction(async (session) => {
-      const opts = session ? { session } : undefined;
-      transfer.toAccount = toAccountId;
-      transfer.status = "confirmed";
-      transfer.resolvedBy = new mongoose.Types.ObjectId(auth.userId);
-      transfer.resolvedAt = new Date();
-      await transfer.save(opts);
+    const requestedToAccountId = parsed.data.toAccountId ?? null;
+
+    await withTransaction(async (session) => {
+      let toAccountId: mongoose.Types.ObjectId | null = null;
+
+      if (requestedToAccountId) {
+        const link = await GroupMemberAccount.findOne({
+          group: groupId,
+          groupMember: membership._id,
+          account: requestedToAccountId,
+        }).session(session);
+        if (!link) {
+          throw new TransferStateError(
+            400,
+            "ACCOUNT_NOT_LINKED",
+            "To account is not linked to this group.",
+          );
+        }
+        const account = await Account.findOne({
+          _id: requestedToAccountId,
+          owner: auth.userId,
+        }).session(session);
+        if (!account) {
+          throw new TransferStateError(
+            404,
+            "ACCOUNT_NOT_FOUND",
+            "To account not found.",
+          );
+        }
+        if (account.currency !== "PKR") {
+          throw new TransferStateError(
+            400,
+            "ACCOUNT_CURRENCY",
+            "Only PKR accounts are supported.",
+          );
+        }
+        toAccountId = account._id;
+      } else {
+        const primary =
+          (await GroupMemberAccount.findOne({
+            group: groupId,
+            groupMember: membership._id,
+            isPrimary: true,
+          }).session(session)) ??
+          (await GroupMemberAccount.findOne({
+            group: groupId,
+            groupMember: membership._id,
+          })
+            .sort({ createdAt: 1 })
+            .session(session));
+
+        if (!primary) {
+          throw new TransferStateError(
+            400,
+            "NO_PAYER_ACCOUNT",
+            "Link an account before confirming this settlement.",
+          );
+        }
+        const account = await Account.findById(primary.account).session(
+          session,
+        );
+        if (!account || account.currency !== "PKR") {
+          throw new TransferStateError(
+            400,
+            "ACCOUNT_CURRENCY",
+            "Only PKR accounts are supported.",
+          );
+        }
+        toAccountId = account._id;
+      }
+
+      const fromMember = await GroupMember.findById(
+        existing.fromMember,
+      ).session(session);
+      if (!fromMember) {
+        throw new TransferStateError(404, "NOT_FOUND", "Transfer not found");
+      }
+
+      if (fromMember.memberType === "registered") {
+        if (!existing.fromAccount) {
+          throw new TransferStateError(
+            400,
+            "NO_SENDER_ACCOUNT",
+            "Sender account is missing on this settlement.",
+          );
+        }
+
+        const senderLink = await GroupMemberAccount.findOne({
+          group: groupId,
+          groupMember: fromMember._id,
+          account: existing.fromAccount,
+        }).session(session);
+        const senderAccount = await Account.findById(
+          existing.fromAccount,
+        ).session(session);
+
+        const ownerOk =
+          Boolean(fromMember.user) &&
+          Boolean(senderAccount) &&
+          senderAccount!.owner.toString() === fromMember.user!.toString();
+
+        if (
+          !senderLink ||
+          !senderAccount ||
+          !ownerOk ||
+          senderAccount.currency !== "PKR"
+        ) {
+          throw new TransferStateError(
+            409,
+            "SENDER_ACCOUNT_UNAVAILABLE",
+            "The sender's account is no longer linked to this group. Ask them to cancel and re-send the settlement.",
+          );
+        }
+      }
+
+      const claimed = await GroupTransfer.findOneAndUpdate(
+        {
+          _id: tid,
+          group: groupId,
+          status: "pending",
+          toMember: membership._id,
+        },
+        {
+          $set: {
+            status: "confirmed",
+            toAccount: toAccountId,
+            resolvedBy: new mongoose.Types.ObjectId(auth.userId),
+            resolvedAt: new Date(),
+          },
+        },
+        { returnDocument: "after", session },
+      );
+
+      if (!claimed) {
+        throw new TransferStateError(
+          409,
+          "NOT_PENDING",
+          "This settlement was already resolved.",
+        );
+      }
 
       await applyGroupTransferLedger({
-        transfer,
+        transfer: claimed,
         group,
         fromMember,
         toMember: membership,
@@ -203,13 +261,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       });
     });
 
-    const refreshed = await GroupTransfer.findById(transfer._id);
+    const refreshed = await GroupTransfer.findById(tid);
+    const fromMember = await GroupMember.findById(refreshed!.fromMember);
 
     try {
       await notifySettlementConfirmed({
         group,
         transfer: refreshed!,
-        fromMember,
+        fromMember: fromMember!,
         actorUserId: auth.userId,
       });
     } catch (error) {
@@ -220,24 +279,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       transfer: await buildGroupTransferPublic(refreshed!),
     });
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
-    }
-
-    if (
-      error instanceof AccountNotFoundError ||
-      error instanceof AccountOwnershipError
-    ) {
-      return NextResponse.json({ error: "Account not found" }, { status: 404 });
-    }
-
-    if (error instanceof InvalidLedgerAmountError) {
-      return NextResponse.json(
-        { error: error.message, fields: { amount: error.message } },
-        { status: 400 },
-      );
+    const mapped = transferErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     console.error("Confirm group transfer error:", error);

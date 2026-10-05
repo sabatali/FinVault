@@ -3,12 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
-import { GroupExpenseLedgerError } from "@/lib/group-expense-ledger";
+import { groupExpenseErrorResponse } from "@/lib/group-expense-errors";
 import {
   assertCanManageGroupExpense,
   buildGroupExpensePublic,
   deleteGroupExpense,
-  GroupExpenseMutationError,
   updateGroupExpense,
 } from "@/lib/group-expense-service";
 import {
@@ -17,39 +16,12 @@ import {
   groupAccessErrorResponse,
 } from "@/lib/group-access";
 import {
-  AccountNotFoundError,
-  AccountOwnershipError,
-  InvalidLedgerAmountError,
-} from "@/lib/ledger-errors";
-import {
   formatZodErrors,
   updateGroupExpenseSchema,
 } from "@/lib/validators/group-expense";
 import { GroupExpense } from "@/models/GroupExpense";
 
 type RouteContext = { params: Promise<{ id: string; expenseId: string }> };
-
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code: number }).code === 11000
-  );
-}
-
-function mutationErrorResponse(error: GroupExpenseMutationError) {
-  return NextResponse.json(
-    {
-      error: error.message,
-      ...(error.code ? { code: error.code } : {}),
-      ...(error.fields ? { fields: error.fields } : {}),
-      ...(error.expected !== undefined ? { expected: error.expected } : {}),
-      ...(error.actual !== undefined ? { actual: error.actual } : {}),
-    },
-    { status: error.status },
-  );
-}
 
 export async function GET(request: NextRequest, context: RouteContext) {
   const auth = await requireAuth(request);
@@ -153,54 +125,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       expense: await buildGroupExpensePublic(updated),
     });
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
-    }
-
-    if (error instanceof GroupExpenseMutationError) {
-      return mutationErrorResponse(error);
-    }
-
-    if (error instanceof GroupExpenseLedgerError) {
-      return NextResponse.json(
-        { error: error.message, code: error.code },
-        { status: error.status },
-      );
-    }
-
-    if (isDuplicateKeyError(error)) {
-      return NextResponse.json(
-        { error: "This group expense was already recorded." },
-        { status: 409 },
-      );
-    }
-
-    if (
-      error instanceof AccountNotFoundError ||
-      error instanceof AccountOwnershipError
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            error instanceof AccountOwnershipError
-              ? "Payer account does not belong to the payer."
-              : "Account not found",
-          code:
-            error instanceof AccountOwnershipError
-              ? "ACCOUNT_OWNER_MISMATCH"
-              : "ACCOUNT_NOT_FOUND",
-        },
-        { status: error instanceof AccountOwnershipError ? 400 : 404 },
-      );
-    }
-
-    if (error instanceof InvalidLedgerAmountError) {
-      return NextResponse.json(
-        { error: error.message, fields: { amount: error.message } },
-        { status: 400 },
-      );
+    const mapped = groupExpenseErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     console.error("Update group expense error:", error);
@@ -246,14 +173,9 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
-    }
-
-    if (error instanceof GroupExpenseMutationError) {
-      return mutationErrorResponse(error);
+    const mapped = groupExpenseErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     console.error("Delete group expense error:", error);

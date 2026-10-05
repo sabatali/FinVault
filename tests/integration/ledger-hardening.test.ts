@@ -19,7 +19,7 @@ import { deleteGroupExpense, updateGroupExpense } from "@/lib/group-expense-serv
 import { applyGroupTransferLedger } from "@/lib/group-transfer-ledger";
 import { findOwnedAccount, getAccountDeletePolicy } from "@/lib/account-access";
 import { findGroupMembership } from "@/lib/group-access";
-import { withOptionalTransaction } from "@/lib/with-transaction";
+import { withOptionalTransaction, withTransaction } from "@/lib/with-transaction";
 import { Account } from "@/models/Account";
 import { Expense } from "@/models/Expense";
 import { GroupMember } from "@/models/GroupMember";
@@ -412,11 +412,14 @@ describe("group expenses, transfers, claim", () => {
     transfer.resolvedAt = new Date();
     await transfer.save();
 
-    await applyGroupTransferLedger({
-      transfer,
-      group,
-      fromMember: otherMember!,
-      toMember: adminMember,
+    await withTransaction(async (session) => {
+      await applyGroupTransferLedger({
+        transfer,
+        group,
+        fromMember: otherMember!,
+        toMember: adminMember,
+        session,
+      });
     });
 
     expect((await Account.findById(bobAccount._id))!.cachedBalance).toBe(750);
@@ -453,11 +456,14 @@ describe("group expenses, transfers, claim", () => {
       resolvedAt: new Date(),
     });
 
-    await applyGroupTransferLedger({
-      transfer,
-      group,
-      fromMember: adminMember,
-      toMember: guestMember!,
+    await withTransaction(async (session) => {
+      await applyGroupTransferLedger({
+        transfer,
+        group,
+        fromMember: adminMember,
+        toMember: guestMember!,
+        session,
+      });
     });
 
     expect((await Account.findById(aliceAccount._id))!.cachedBalance).toBe(
@@ -516,11 +522,14 @@ describe("group expenses, transfers, claim", () => {
       resolvedAt: new Date(),
     });
 
-    await applyGroupTransferLedger({
-      transfer: next,
-      group,
-      fromMember: otherMember!,
-      toMember: adminMember,
+    await withTransaction(async (session) => {
+      await applyGroupTransferLedger({
+        transfer: next,
+        group,
+        fromMember: otherMember!,
+        toMember: adminMember,
+        session,
+      });
     });
 
     expect((await Account.findById(bobAccount._id))!.cachedBalance).toBe(1925);

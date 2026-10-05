@@ -8,6 +8,7 @@ interface RemoveMemberDialogProps {
   open: boolean;
   loading: boolean;
   error: string | null;
+  activityDetails?: { expenses: number; transfers: number } | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -18,6 +19,7 @@ export function RemoveMemberDialog({
   open,
   loading,
   error,
+  activityDetails,
   onConfirm,
   onCancel,
 }: RemoveMemberDialogProps) {
@@ -70,7 +72,16 @@ export function RemoveMemberDialog({
             role="alert"
             className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
           >
-            {error}
+            <p>{error}</p>
+            {activityDetails ? (
+              <p className="mt-1">
+                {activityDetails.expenses} expense
+                {activityDetails.expenses === 1 ? "" : "s"}
+                {" · "}
+                {activityDetails.transfers} transfer
+                {activityDetails.transfers === 1 ? "" : "s"}
+              </p>
+            ) : null}
           </div>
         ) : null}
 

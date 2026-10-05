@@ -30,6 +30,16 @@ export async function GET() {
       await db.admin().ping();
     }
 
+    let transactions = false;
+    let replicaSet: string | null = null;
+    if (db) {
+      const hello = (await db.admin().command({ hello: 1 })) as {
+        setName?: string;
+      };
+      replicaSet = hello.setName ?? null;
+      transactions = Boolean(hello.setName);
+    }
+
     return NextResponse.json({
       ok: true,
       app: "finvault",
@@ -37,7 +47,16 @@ export async function GET() {
       db: {
         connected: true,
         readyState: getMongoReadyState(),
+        transactions,
+        replicaSet,
       },
+      ...(transactions
+        ? {}
+        : {
+            warnings: [
+              "MongoDB is not a replica set — ledger writes will be rejected",
+            ],
+          }),
     });
   } catch {
     return NextResponse.json(
