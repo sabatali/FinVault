@@ -118,7 +118,15 @@ or deleting a group expense (the linked `Transaction` must be found via
 to **allow negative balances** rather than blocking group expenses when an
 account doesn't have sufficient funds.
 
-## 8. Build Plan
+## 8. Group expense rules
+
+- The payer’s linked account is debited the **full expense amount** immediately (Option A). Participants’ shares live on `GroupExpense.participants` and are **not** ledger rows.
+- Settlements (`GroupTransfer`) are what move money between members. Pending transfers do not change balances or accounts until confirmed (or auto-confirmed when a guest is involved).
+- Group receivables (what you are owed / owe) appear on the dashboard and account page as bookkeeping. They are **not** part of net worth.
+- Personal spending includes your own `shareAmount` on group expenses in the selected period — not the full amount you paid, and not settlements.
+- Multi-document ledger writes require a MongoDB replica set. Unlinking an account or removing a member is blocked when pending transfers or expense/transfer history still reference them.
+
+## 9. Build Plan
 
 The project is being built in phases, from foundation up to full polish. See
 `project_phases.html` for the complete, detailed phase-by-phase feature and
@@ -134,7 +142,7 @@ acceptance-criteria breakdown. In short:
 7. Guest Claim Flow
 8. Polish & Reporting
 
-## 9. Open Items / Future Considerations
+## 10. Open Items / Future Considerations
 
 - Whether to hard-block group expenses on insufficient balance vs. only warn
   (currently: allow negative, warn only).

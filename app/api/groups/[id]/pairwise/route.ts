@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { requireAuth } from "@/lib/auth";
-import { computeGroupBalances } from "@/lib/group-balances";
 import {
   assertGroupMember,
   GroupAccessError,
   groupAccessErrorResponse,
 } from "@/lib/group-access";
-import { suggestionsFromBalances } from "@/lib/settlement-view";
+import { computePairwiseDebts } from "@/lib/group-pairwise";
+import { loadGroupSettlementData } from "@/lib/load-group-settlement";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -21,12 +21,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     await assertGroupMember(auth.userId, groupId);
-    const balances = await computeGroupBalances(groupId);
+    const data = await loadGroupSettlementData(groupId);
+    const debts = computePairwiseDebts(data);
 
     return NextResponse.json({
-      currency: balances.currency,
-      suggestions: suggestionsFromBalances(balances.members),
-      pending: balances.pendingTransfers,
+      debts: debts.map((debt) => ({
+        ...debt,
+        debtorDisplayName:
+          data.members.find((member) => member.memberId === debt.debtorMemberId)
+            ?.displayName ?? "Member",
+        creditorDisplayName:
+          data.members.find((member) => member.memberId === debt.creditorMemberId)
+            ?.displayName ?? "Member",
+      })),
     });
   } catch (error) {
     if (error instanceof GroupAccessError) {
@@ -35,9 +42,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       });
     }
 
-    console.error("Get settlement suggestions error:", error);
+    console.error("Get pairwise debts error:", error);
     return NextResponse.json(
-      { error: "Unable to compute settlement suggestions" },
+      { error: "Unable to compute pairwise debts" },
       { status: 500 },
     );
   }

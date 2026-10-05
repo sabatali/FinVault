@@ -16,6 +16,8 @@ import {
   updateAccountSchema,
 } from "@/lib/validators/account";
 import { toAccountPublic } from "@/models/Account";
+import { GroupMemberAccount } from "@/models/GroupMemberAccount";
+import { GroupTransfer } from "@/models/GroupTransfer";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -143,6 +145,27 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     const account = await findOwnedAccount(auth.userId, id);
     if (!account) {
       return NextResponse.json({ error: "Account not found" }, { status: 404 });
+    }
+
+    const groupLink = await GroupMemberAccount.exists({
+      account: account._id,
+    });
+    const pendingTransfer = await GroupTransfer.exists({
+      status: "pending",
+      $or: [
+        { fromAccount: account._id },
+        { toAccount: account._id },
+      ],
+    });
+    if (groupLink || pendingTransfer) {
+      return NextResponse.json(
+        {
+          error:
+            "This account is linked to a group or a pending settlement and cannot be deleted.",
+          code: "ACCOUNT_IN_USE_BY_GROUP",
+        },
+        { status: 409 },
+      );
     }
 
     const policy = await getAccountDeletePolicy(account._id);

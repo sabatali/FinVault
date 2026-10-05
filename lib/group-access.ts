@@ -9,6 +9,7 @@ import {
 } from "@/models/GroupMember";
 import { GroupMemberAccount } from "@/models/GroupMemberAccount";
 import { GroupExpense } from "@/models/GroupExpense";
+import { GroupTransfer } from "@/models/GroupTransfer";
 
 export class GroupAccessError extends Error {
   status: number;
@@ -105,20 +106,32 @@ export async function countGroupAdmins(
   });
 }
 
+export async function memberActivityCounts(
+  memberId: mongoose.Types.ObjectId | string,
+): Promise<{ expenses: number; transfers: number }> {
+  await connectDB();
+  const [expenses, transfers] = await Promise.all([
+    GroupExpense.countDocuments({
+      $or: [
+        { payerMember: memberId },
+        { "participants.member": memberId },
+      ],
+    }),
+    GroupTransfer.countDocuments({
+      $or: [{ fromMember: memberId }, { toMember: memberId }],
+    }),
+  ]);
+  return { expenses, transfers };
+}
+
 /**
- * Placeholder for Phase 5+: block remove when member is on expenses/transfers.
+ * Block remove when the member appears on expenses or transfers.
  */
 export async function memberHasActivity(
   memberId: mongoose.Types.ObjectId | string,
 ): Promise<boolean> {
-  await connectDB();
-  const count = await GroupExpense.countDocuments({
-    $or: [
-      { payerMember: memberId },
-      { "participants.member": memberId },
-    ],
-  });
-  return count > 0;
+  const counts = await memberActivityCounts(memberId);
+  return counts.expenses > 0 || counts.transfers > 0;
 }
 
 export async function listGroupsForUser(userId: string): Promise<

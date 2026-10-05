@@ -169,6 +169,43 @@ export function GroupExpenseDetail({
           </ul>
         </div>
 
+        <div>
+          <p className="text-sm font-semibold text-[#5a6072]">
+            From this expense
+          </p>
+          <ul className="mt-2 divide-y divide-[#e4e7ee] rounded-lg border border-[#e4e7ee]">
+            {expense.participants
+              .filter(
+                (participant) =>
+                  participant.memberId !== expense.payerMemberId,
+              )
+              .map((participant) => (
+                <li
+                  key={participant.memberId}
+                  className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm"
+                >
+                  <span className="text-[#1a1d29]">
+                    {participant.displayName ?? "Member"} owes{" "}
+                    {expense.payerDisplayName ?? "payer"}
+                  </span>
+                  <span className="font-medium text-[#1a1d29]">
+                    {format(participant.shareAmount)}
+                  </span>
+                </li>
+              ))}
+          </ul>
+          <p className="mt-2 text-xs text-[#5a6072]">
+            This is what this bill alone creates. Your overall balance
+            combines all bills and settlements.{" "}
+            <Link
+              href={`/groups/${groupId}/statement`}
+              className="font-semibold text-[#2f5fdc] hover:underline"
+            >
+              View statement
+            </Link>
+          </p>
+        </div>
+
         {expense.payerAccountId && expense.transactionId ? (
           <p className="text-xs text-[#5a6072]">
             Ledger: one{" "}

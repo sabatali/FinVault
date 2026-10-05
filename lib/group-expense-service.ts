@@ -14,7 +14,7 @@ import {
   sumShareAmounts,
 } from "@/lib/splits";
 import type { CreateGroupExpenseInput } from "@/lib/validators/group-expense";
-import { withOptionalTransaction } from "@/lib/with-transaction";
+import { withTransaction } from "@/lib/with-transaction";
 import { Account } from "@/models/Account";
 import type { IGroup } from "@/models/Group";
 import {
@@ -151,8 +151,9 @@ export async function resolvePayerAccount(input: {
   groupId: string;
   payerMember: IGroupMember;
   payerAccountId?: string | null;
+  session?: ClientSession;
 }): Promise<mongoose.Types.ObjectId | null> {
-  const { groupId, payerMember, payerAccountId } = input;
+  const { groupId, payerMember, payerAccountId, session } = input;
 
   if (payerMember.memberType !== "registered") {
     if (payerAccountId) {
@@ -171,11 +172,15 @@ export async function resolvePayerAccount(input: {
   let link = null as InstanceType<typeof GroupMemberAccount> | null;
 
   if (payerAccountId) {
-    link = await GroupMemberAccount.findOne({
+    const linkQuery = GroupMemberAccount.findOne({
       group: groupId,
       groupMember: payerMember._id,
       account: payerAccountId,
     });
+    if (session) {
+      linkQuery.session(session);
+    }
+    link = await linkQuery;
     if (!link) {
       throw new GroupExpenseMutationError(
         "Payer account is not linked to this group.",
@@ -187,16 +192,20 @@ export async function resolvePayerAccount(input: {
       );
     }
   } else {
-    link =
-      (await GroupMemberAccount.findOne({
-        group: groupId,
-        groupMember: payerMember._id,
-        isPrimary: true,
-      })) ??
-      (await GroupMemberAccount.findOne({
-        group: groupId,
-        groupMember: payerMember._id,
-      }).sort({ createdAt: 1 }));
+    const primaryQuery = GroupMemberAccount.findOne({
+      group: groupId,
+      groupMember: payerMember._id,
+      isPrimary: true,
+    });
+    const oldestQuery = GroupMemberAccount.findOne({
+      group: groupId,
+      groupMember: payerMember._id,
+    }).sort({ createdAt: 1 });
+    if (session) {
+      primaryQuery.session(session);
+      oldestQuery.session(session);
+    }
+    link = (await primaryQuery) ?? (await oldestQuery);
   }
 
   if (!link) {
@@ -212,7 +221,11 @@ export async function resolvePayerAccount(input: {
     );
   }
 
-  const account = await Account.findById(link.account);
+  const accountQuery = Account.findById(link.account);
+  if (session) {
+    accountQuery.session(session);
+  }
+  const account = await accountQuery;
   if (!account) {
     throw new GroupExpenseMutationError("Payer account not found.", 400, {
       code: "ACCOUNT_NOT_FOUND",
@@ -245,13 +258,18 @@ export async function loadMembersForExpenseInput(input: {
   groupId: string;
   payerMemberId: string;
   participantMemberIds: string[];
+  session?: ClientSession;
 }): Promise<{ members: IGroupMember[]; payerMember: IGroupMember }> {
   const allMemberIds = [input.payerMemberId, ...input.participantMemberIds];
   const uniqueIds = [...new Set(allMemberIds)];
-  const members = await GroupMember.find({
+  const membersQuery = GroupMember.find({
     _id: { $in: uniqueIds },
     group: input.groupId,
   });
+  if (input.session) {
+    membersQuery.session(input.session);
+  }
+  const members = await membersQuery;
 
   if (members.length !== uniqueIds.length) {
     throw new GroupExpenseMutationError(
@@ -277,7 +295,7 @@ export async function loadMembersForExpenseInput(input: {
 
 async function reverseExpenseDebit(
   expense: IGroupExpense,
-  session: ClientSession | null,
+  session: ClientSession,
 ): Promise<void> {
   await reverseLedgerEntriesForSource({
     sourceType: "group_expense",
@@ -296,11 +314,100 @@ export async function deleteGroupExpense(input: {
 }): Promise<void> {
   void input.group;
 
-  await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+  await withTransaction(async (session) => {
     await reverseExpenseDebit(input.expense, session);
-    await GroupExpense.deleteOne({ _id: input.expense._id }, opts);
+    await GroupExpense.deleteOne({ _id: input.expense._id }, { session });
   });
+}
+
+export async function createGroupExpense(input: {
+  group: IGroup;
+  data: CreateGroupExpenseInput;
+  createdByUserId: string;
+}): Promise<IGroupExpense> {
+  const amount = roundAmount(input.data.amount);
+  const groupId = input.group._id.toString();
+
+  const expenseId = await withTransaction(async (session) => {
+    const { payerMember } = await loadMembersForExpenseInput({
+      groupId,
+      payerMemberId: input.data.payerMemberId,
+      participantMemberIds: input.data.participantMemberIds,
+      session,
+    });
+
+    const payerAccountId = await resolvePayerAccount({
+      groupId,
+      payerMember,
+      payerAccountId: input.data.payerAccountId,
+      session,
+    });
+
+    const shares = computeParticipantShares(amount, input.data);
+    const newExpenseId = new mongoose.Types.ObjectId();
+
+    const [expense] = await GroupExpense.create(
+      [
+        {
+          _id: newExpenseId,
+          group: input.group._id,
+          description: input.data.description,
+          amount,
+          currency: "PKR",
+          splitType: input.data.splitType,
+          payerMember: payerMember._id,
+          payerAccount: payerAccountId,
+          participants: shares.map((share) => ({
+            member: new mongoose.Types.ObjectId(share.memberId),
+            shareAmount: share.shareAmount,
+          })),
+          occurredAt: input.data.occurredAt,
+          createdBy: new mongoose.Types.ObjectId(input.createdByUserId),
+          transactionId: null,
+        },
+      ],
+      { session },
+    );
+
+    if (payerMember.memberType === "registered" && payerAccountId) {
+      const transaction = await postGroupExpenseDebit({
+        expense,
+        group: input.group,
+        payerMember,
+        session,
+      });
+      expense.transactionId = transaction._id;
+      await expense.save({ session });
+
+      if (!expense.transactionId) {
+        throw new GroupExpenseLedgerError(
+          "Registered payer group expense must have a transaction",
+          500,
+          "MISSING_GROUP_EXPENSE_TRANSACTION",
+        );
+      }
+    }
+
+    return newExpenseId;
+  });
+
+  const created = await GroupExpense.findById(expenseId);
+  if (!created) {
+    throw new GroupExpenseMutationError("Unable to create group expense", 500);
+  }
+
+  if (
+    created.payerAccount &&
+    !created.transactionId
+  ) {
+    throw new GroupExpenseLedgerError(
+      "Group expense debit failed to record a transaction.",
+      500,
+      "MISSING_GROUP_EXPENSE_TRANSACTION",
+    );
+  }
+
+  return created;
 }
 
 /**
@@ -315,22 +422,22 @@ export async function updateGroupExpense(input: {
   const amount = roundAmount(data.amount);
   const groupId = group._id.toString();
 
-  const { payerMember } = await loadMembersForExpenseInput({
-    groupId,
-    payerMemberId: data.payerMemberId,
-    participantMemberIds: data.participantMemberIds,
-  });
+  await withTransaction(async (session) => {
+    const { payerMember } = await loadMembersForExpenseInput({
+      groupId,
+      payerMemberId: data.payerMemberId,
+      participantMemberIds: data.participantMemberIds,
+      session,
+    });
 
-  const payerAccountId = await resolvePayerAccount({
-    groupId,
-    payerMember,
-    payerAccountId: data.payerAccountId,
-  });
+    const payerAccountId = await resolvePayerAccount({
+      groupId,
+      payerMember,
+      payerAccountId: data.payerAccountId,
+      session,
+    });
 
-  const shares = computeParticipantShares(amount, data);
-
-  await withOptionalTransaction(async (session) => {
-    const opts = session ? { session } : undefined;
+    const shares = computeParticipantShares(amount, data);
 
     await reverseExpenseDebit(expense, session);
 
@@ -347,35 +454,24 @@ export async function updateGroupExpense(input: {
     expense.occurredAt = data.occurredAt;
     expense.transactionId = null;
 
-    await expense.save(opts);
+    await expense.save({ session });
 
     if (payerMember.memberType === "registered" && payerAccountId) {
-      try {
-        const transaction = await postGroupExpenseDebit({
-          expense,
-          group,
-          payerMember,
-          session,
-        });
-        expense.transactionId = transaction._id;
-        await expense.save(opts);
+      const transaction = await postGroupExpenseDebit({
+        expense,
+        group,
+        payerMember,
+        session,
+      });
+      expense.transactionId = transaction._id;
+      await expense.save({ session });
 
-        if (!expense.transactionId) {
-          throw new GroupExpenseLedgerError(
-            "Registered payer group expense must have a transaction",
-            500,
-            "MISSING_GROUP_EXPENSE_TRANSACTION",
-          );
-        }
-      } catch (error) {
-        if (!session) {
-          await reverseLedgerEntriesForSource({
-            sourceType: "group_expense",
-            sourceId: expense._id,
-            session: null,
-          });
-        }
-        throw error;
+      if (!expense.transactionId) {
+        throw new GroupExpenseLedgerError(
+          "Registered payer group expense must have a transaction",
+          500,
+          "MISSING_GROUP_EXPENSE_TRANSACTION",
+        );
       }
     }
   });

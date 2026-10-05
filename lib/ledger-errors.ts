@@ -34,3 +34,15 @@ export class BalanceMismatchError extends LedgerError {
     this.name = "BalanceMismatchError";
   }
 }
+
+export class TransactionsUnavailableError extends LedgerError {
+  status = 503;
+  code = "TRANSACTIONS_UNAVAILABLE" as const;
+
+  constructor() {
+    super(
+      "MongoDB must run as a replica set for ledger safety. Run rs.initiate() in mongosh.",
+    );
+    this.name = "TransactionsUnavailableError";
+  }
+}

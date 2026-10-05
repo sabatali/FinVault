@@ -8,7 +8,7 @@ import {
   countGroupAdmins,
   GroupAccessError,
   groupAccessErrorResponse,
-  memberHasActivity,
+  memberActivityCounts,
 } from "@/lib/group-access";
 import { formatZodErrors } from "@/lib/validators/group";
 import { updateGroupMemberRoleSchema } from "@/lib/validators/group-member";
@@ -129,11 +129,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       }
     }
 
-    if (await memberHasActivity(member._id)) {
+    const activity = await memberActivityCounts(member._id);
+    if (activity.expenses > 0 || activity.transfers > 0) {
       return NextResponse.json(
         {
           error: "This member has group activity and cannot be removed.",
           code: "MEMBER_HAS_ACTIVITY",
+          details: activity,
         },
         { status: 409 },
       );

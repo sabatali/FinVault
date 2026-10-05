@@ -4,6 +4,7 @@ import { useMoney } from "@/components/currency/CurrencyProvider";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+import type { PendingBalanceTransfer } from "@/lib/group-balances";
 import type { GroupMemberPublic } from "@/models/GroupMember";
 
 export interface SettlementSuggestionItem {
@@ -20,6 +21,10 @@ interface SettlementSuggestionsProps {
   members: GroupMemberPublic[];
   currency?: string;
   initialSuggestions: SettlementSuggestionItem[];
+  initialPending?: PendingBalanceTransfer[];
+  onConfirmPending?: (transferId: string) => void;
+  onRejectPending?: (transferId: string) => void;
+  confirmingId?: string | null;
 }
 
 function canRecordSuggestion(input: {
@@ -46,12 +51,16 @@ export function SettlementSuggestions({
   groupId,
   currentMemberId,
   members,
-  currency = "PKR",
   initialSuggestions,
+  initialPending = [],
+  onConfirmPending,
+  onRejectPending,
+  confirmingId = null,
 }: SettlementSuggestionsProps) {
   const { format } = useMoney();
   const router = useRouter();
   const [suggestions, setSuggestions] = useState(initialSuggestions);
+  const [pending, setPending] = useState(initialPending);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +74,7 @@ export function SettlementSuggestions({
       );
       const data = (await response.json()) as {
         suggestions?: SettlementSuggestionItem[];
+        pending?: PendingBalanceTransfer[];
         error?: string;
       };
       if (!response.ok) {
@@ -72,6 +82,7 @@ export function SettlementSuggestions({
         return;
       }
       setSuggestions(data.suggestions ?? []);
+      setPending(data.pending ?? []);
     } catch {
       setError("Network error. Please try again.");
     } finally {
@@ -98,6 +109,51 @@ export function SettlementSuggestions({
           A short list of payments that would clear everyone’s balances.
         </p>
       </div>
+
+      {pending.length > 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <h4 className="text-sm font-semibold text-amber-950">
+            Waiting for confirmation
+          </h4>
+          <ul className="mt-2 space-y-2">
+            {pending.map((row) => {
+              const isReceiver = row.toMemberId === currentMemberId;
+              return (
+                <li
+                  key={row.transferId}
+                  className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <p className="text-sm text-amber-950">
+                    {row.fromDisplayName} → {row.toDisplayName}{" "}
+                    {format(row.amount)} · waiting for {row.toDisplayName} to
+                    confirm
+                  </p>
+                  {isReceiver ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={confirmingId === row.transferId}
+                        onClick={() => onConfirmPending?.(row.transferId)}
+                        className="rounded-lg bg-[#2f5fdc] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#1e3fae] disabled:opacity-60"
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        disabled={confirmingId === row.transferId}
+                        onClick={() => onRejectPending?.(row.transferId)}
+                        className="rounded-lg border border-amber-300 px-3 py-1.5 text-sm font-medium text-amber-950 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {error ? (
         <div

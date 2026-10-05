@@ -32,7 +32,7 @@ export async function postGroupExpenseDebit(input: {
   expense: IGroupExpense;
   group: IGroup;
   payerMember: IGroupMember;
-  session?: ClientSession | null;
+  session: ClientSession;
 }): Promise<ITransaction> {
   const { expense, group, payerMember, session } = input;
 
@@ -52,11 +52,7 @@ export async function postGroupExpenseDebit(input: {
     );
   }
 
-  const accountQuery = Account.findById(expense.payerAccount);
-  if (session) {
-    accountQuery.session(session);
-  }
-  const account = await accountQuery;
+  const account = await Account.findById(expense.payerAccount).session(session);
 
   if (!account) {
     throw new AccountNotFoundError(expense.payerAccount.toString());

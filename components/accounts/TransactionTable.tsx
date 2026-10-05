@@ -137,7 +137,15 @@ export function TransactionTable({ accountId, initialData }: TransactionTablePro
                     {formatDateTime(transaction.occurredAt)}
                   </td>
                   <td className="px-4 py-3 text-[#1a1d29]">
-                    {transaction.description || "—"}
+                    <p>{transaction.description || "—"}</p>
+                    {transaction.groupExpense ? (
+                      <p className="mt-1 text-xs text-[#5a6072]">
+                        Your share {format(transaction.groupExpense.yourShare)}
+                        {" · "}
+                        {format(transaction.groupExpense.othersShare)} to be
+                        settled by others
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-[#5a6072]">
                     <SourceCell transaction={transaction} />
@@ -188,6 +196,14 @@ export function TransactionTable({ accountId, initialData }: TransactionTablePro
                     {formatDateTime(transaction.occurredAt)} ·{" "}
                     <SourceCell transaction={transaction} />
                   </p>
+                  {transaction.groupExpense ? (
+                    <p className="mt-1 text-xs text-[#5a6072]">
+                      Your share {format(transaction.groupExpense.yourShare)}
+                      {" · "}
+                      {format(transaction.groupExpense.othersShare)} to be
+                      settled by others
+                    </p>
+                  ) : null}
                 </div>
                 <p
                   className={`text-base font-bold ${

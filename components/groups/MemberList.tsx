@@ -57,6 +57,10 @@ export function MemberList({
   const [removeTarget, setRemoveTarget] = useState<GroupMemberPublic | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeActivity, setRemoveActivity] = useState<{
+    expenses: number;
+    transfers: number;
+  } | null>(null);
 
   const adminCount = useMemo(
     () => members.filter((member) => member.role === "admin").length,
@@ -177,10 +181,14 @@ export function MemberList({
           credentials: "include",
         },
       );
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        details?: { expenses: number; transfers: number };
+      };
 
       if (!response.ok) {
         setRemoveError(data.error ?? "Unable to remove member.");
+        setRemoveActivity(data.details ?? null);
         return;
       }
 
@@ -366,11 +374,13 @@ export function MemberList({
         open={Boolean(removeTarget)}
         loading={removeLoading}
         error={removeError}
+        activityDetails={removeActivity}
         onConfirm={() => void handleRemoveConfirm()}
         onCancel={() => {
           if (!removeLoading) {
             setRemoveTarget(null);
             setRemoveError(null);
+            setRemoveActivity(null);
           }
         }}
       />

@@ -28,17 +28,13 @@ function isDuplicateKeyError(error: unknown): boolean {
 async function findExistingTransferTx(input: {
   sourceId: mongoose.Types.ObjectId;
   accountId: mongoose.Types.ObjectId;
-  session?: ClientSession | null;
+  session: ClientSession;
 }) {
-  const query = Transaction.findOne({
+  return Transaction.findOne({
     sourceType: "group_transfer",
     sourceId: input.sourceId,
     account: input.accountId,
-  });
-  if (input.session) {
-    query.session(input.session);
-  }
-  return query;
+  }).session(input.session);
 }
 
 /**
@@ -51,13 +47,13 @@ export async function applyGroupTransferLedger(input: {
   group: IGroup;
   fromMember: IGroupMember;
   toMember: IGroupMember;
-  session?: ClientSession | null;
+  session: ClientSession;
 }): Promise<{
   debitTransactionId: string | null;
   creditTransactionId: string | null;
 }> {
   const { transfer, group, fromMember, toMember, session } = input;
-  const opts = session ? { session } : undefined;
+  const opts = { session };
 
   if (
     transfer.status !== "confirmed" &&
@@ -66,14 +62,10 @@ export async function applyGroupTransferLedger(input: {
     throw new Error("Ledger apply only runs for confirmed transfers");
   }
 
-  const existingQuery = Transaction.find({
+  const existingRows = await Transaction.find({
     sourceType: "group_transfer",
     sourceId: transfer._id,
-  });
-  if (session) {
-    existingQuery.session(session);
-  }
-  const existingRows = await existingQuery;
+  }).session(session);
   const byAccount = new Map<string, { _id: mongoose.Types.ObjectId }>(
     existingRows.map((row) => [row.account.toString(), { _id: row._id }]),
   );

@@ -27,7 +27,8 @@ import {
   createGroupTransferSchema,
   formatZodErrors,
 } from "@/lib/validators/group-transfer";
-import { withOptionalTransaction } from "@/lib/with-transaction";
+import { transferErrorResponse } from "@/lib/group-transfer-errors";
+import { withTransaction } from "@/lib/with-transaction";
 import { Account } from "@/models/Account";
 import { GroupMember, type IGroupMember } from "@/models/GroupMember";
 import { GroupMemberAccount } from "@/models/GroupMemberAccount";
@@ -352,8 +353,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
     }
 
-    const transferId = await withOptionalTransaction(async (session) => {
-      const opts = session ? { session } : undefined;
+    const transferId = await withTransaction(async (session) => {
+      const opts = { session };
       const newId = new mongoose.Types.ObjectId();
 
       const docs = await GroupTransfer.create(
@@ -412,10 +413,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 201 },
     );
   } catch (error) {
-    if (error instanceof GroupAccessError) {
-      return NextResponse.json(groupAccessErrorResponse(error), {
-        status: error.status,
-      });
+    const mapped = transferErrorResponse(error);
+    if (mapped) {
+      return mapped;
     }
 
     if (error instanceof ResponseError) {

@@ -58,6 +58,20 @@ describe("suggestTransfers", () => {
     expect(suggestTransfers(nets)).toEqual([]);
   });
 
+  it("Scenario 1 pending B→A 300 leaves only C→A 300", () => {
+    const netsAfterPending = [
+      { memberId: "a", net: 300 },
+      { memberId: "b", net: 0 },
+      { memberId: "c", net: -300 },
+    ];
+    expect(suggestTransfers(netsAfterPending)).toEqual([
+      { fromMemberId: "c", toMemberId: "a", amount: 300 },
+    ]);
+    expect(
+      suggestionsClearAllNets(netsAfterPending, suggestTransfers(netsAfterPending)),
+    ).toBe(true);
+  });
+
   it("includes guests as from/to", () => {
     const nets = [
       { memberId: "guest", net: -500 },
